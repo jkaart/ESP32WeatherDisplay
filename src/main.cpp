@@ -46,6 +46,8 @@
 
 #include <ArduinoJson.h>
 
+#include <TimeLib.h>
+
 // epd
 #include <epd_driver.h>
 #include <epd_highlevel.h>
@@ -102,6 +104,9 @@ WebServer server(80);
 WiFiClient net;
 MQTTClient mqttClient(768);
 
+//NTP time
+WiFiUDP ntpUDP;
+
 char mqttServerValue[STRING_LEN];
 char mqttUserNameValue[STRING_LEN];
 char mqttUserPasswordValue[STRING_LEN];
@@ -128,6 +133,7 @@ float ruuvi_temperature;
 float ruuvi_humidity;
 long ruuvi_pressure;
 float ruuvi_batteryVoltage;
+unsigned long ruuvi_timestamp;
 
 bool enableSleep = false;
 
@@ -151,20 +157,13 @@ enum EpdDrawError err;
 // EpdRotation orientation = EPD_ROT_PORTRAIT;
 EpdRotation orientation = EPD_ROT_LANDSCAPE;
 
+const int tzHours = 2; // aikavyöhykkeen tuntieroaika UTC:hen nähden
+const int tzMinutes = 0; // aikavyöhykkeen minuutin eroaika UTC:hen nähden
+const int dstOffset = 3600; // kesäajan tunnin siirtymä
+const int stdOffset = 0; // talviajan tunnin siirtymä
+
 /*End of E-Paper*/
 
-// void draw_value_text_ui(const char* text, int cursor_x, int cursor_y) {
-//   EpdFontProperties font_props = epd_font_properties_default();
-//   font_props.flags = EPD_DRAW_ALIGN_RIGHT;
-//   epd_write_string(&OpenSans12B, text, &cursor_x, &cursor_y, fb, &font_props);
-
-// }
-
-// void draw_value_icon_ui(const char* text, int cursor_x, int cursor_y) {
-//   EpdFontProperties font_props = epd_font_properties_default();
-//   font_props.flags = EPD_DRAW_ALIGN_RIGHT;
-//   epd_write_string(&OpenSans16B, text, &cursor_x, &cursor_y, fb, &font_props);
-// }
 void draw_sensors_top(const char* sensor_text, int cursor_x, int cursor_y) {
   EpdFontProperties font_props = epd_font_properties_default();
   font_props.flags = EPD_DRAW_ALIGN_CENTER;
@@ -215,6 +214,7 @@ void setup()
   // Serial.begin(9600);
   Serial.println();
   Serial.println("Starting up...");
+//  
 
   // First setup epd to use later
   epd_init(EPD_OPTIONS_DEFAULT);
@@ -264,7 +264,7 @@ void setup()
 
   mqttClient.begin(mqttServerValue, net);
   mqttClient.onMessageAdvanced(mqttMessageReceived);
-  
+
   Serial.println("Ready.");
 }
 
@@ -294,16 +294,6 @@ void loop()
     iotWebConf.delay(1000);
     ESP.restart();
   }
-  /*
-    unsigned long now = millis();
-    if ((500 < now - lastReport) && (pinState != digitalRead(CONFIG_PIN)))
-    {
-      pinState = 1 - pinState; // invert pin state as it is changed
-      lastReport = now;
-      Serial.print("Sending on MQTT channel 'test/status' :");
-      Serial.println(pinState == LOW ? "ON" : "OFF");
-      mqttClient.publish("test/status", pinState == LOW ? "ON" : "OFF");
-    } */
 
   // mqttClient.subscribe(ruuvitags[ruuvitagIndex]);
   ruuvi_pressure = doc["pressure"];
@@ -315,8 +305,8 @@ void loop()
     ruuvi_mac = doc["mac"];
     ruuvi_temperature = doc["temperature"];
     ruuvi_humidity = doc["humidity"];
-
     ruuvi_batteryVoltage = doc["batteryVoltage"];
+    ruuvi_timestamp = doc["timestamp"];
 
     switch (ruuvitagIndex)
     {
@@ -334,8 +324,8 @@ void loop()
     }
     cursor_y = 60;
     draw_sensors_top(ruuvi_name, cursor_x, 60);
-    char buff[9];
- 
+
+    char buff[32];
     dtostrf(ruuvi_temperature,7,2,buff);
     draw_sensors_value(buff, cursor_x + 55, 148);
     dtostrf(ruuvi_humidity,7,2,buff);
@@ -344,7 +334,22 @@ void loop()
     draw_sensors_value(buff, cursor_x + 55, 288);
     dtostrf(ruuvi_batteryVoltage,7,2,buff);
     draw_sensors_value(buff, cursor_x + 55, 358);
+    // dtostrf(ruuvi_timestamp,7,2,buff);
+    setTime(ruuvi_timestamp); // aseta jokin testiaika
+    time_t t = now(); // hae nykyinen aika
 
+    // if (isDST(t)) {
+    //   adjustTime(dstOffset); // siirrä aikaa kesäajan mukaisesti
+    // } else {
+    //   adjustTime(stdOffset); // siirrä aikaa talviajan mukaisesti
+    // }
+    
+
+    //draw_sensors_value(t, cursor_x + 55, 428);
+    
+
+    //String buff = getEpochStringByParams(EE.toLocal(ruuvi_timestamp),"%d/%m/%y %H:%M:%S");
+    
     // Serial.println(ruuvi_name);
     // Serial.println(str + "temperature " + ruuvi_temperature + " C");
     // Serial.println(str + "humidity " + ruuvi_humidity + " %");

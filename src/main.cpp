@@ -40,7 +40,9 @@
 // #include "driver/gpio.h"
 #include <esp_sleep.h>
 
+#include <Timezone.h>
 #include <MQTT.h>
+
 #include <IotWebConf.h>
 #include <IotWebConfUsing.h> // This loads aliases for easier class names.
 
@@ -48,11 +50,13 @@
 
 #include <TimeLib.h>
 
+#include <Battery18650Stats.h>
+
 // epd
 #include <epd_driver.h>
 #include <epd_highlevel.h>
 
-//Icons and fornts
+// Icons and fornts
 #include "opensans12b.h"
 #include "opensans16b.h"
 #include "opensans24b.h"
@@ -67,7 +71,7 @@
 
 #define uS_TO_S_FACTOR 1000000 /* Conversion factor for micro seconds to seconds */
 #define TIME_TO_SLEEP 60 * 30  /* Time ESP32 will go to sleep (in seconds) */
-//#define TIME_TO_SLEEP 60 /* Time ESP32 will go to sleep (in seconds) */
+// #define TIME_TO_SLEEP 60 /* Time ESP32 will go to sleep (in seconds) */
 
 // -- Initial name of the Thing. Used e.g. as SSID of the own Access Point.
 const char thingName[] = "testThing";
@@ -89,6 +93,8 @@ const char wifiInitialApPassword[] = "smrtTHNG8266";
 //      when connected to the Wifi it will turn off (kept HIGH).
 // #define STATUS_PIN LED_BUILTIN
 
+Battery18650Stats battery(BATT_PIN,1.79);
+
 // -- Method declarations.
 void handleRoot();
 void mqttMessageReceived(MQTTClient *client, char topic[], char payload[], int payload_length);
@@ -104,8 +110,13 @@ WebServer server(80);
 WiFiClient net;
 MQTTClient mqttClient(768);
 
-//NTP time
+// NTP time
 WiFiUDP ntpUDP;
+
+// Eastern European Time (Helsinki, Finland)
+TimeChangeRule EEST = {"EEST", Last, Sun, Mar, 3, 180};     // Eastern European Summer Time
+TimeChangeRule EET = {"EET ", Last, Sun, Oct, 4, 120};       // Eastern European Standard Time
+Timezone EE(EEST, EET);
 
 char mqttServerValue[STRING_LEN];
 char mqttUserNameValue[STRING_LEN];
@@ -157,22 +168,23 @@ enum EpdDrawError err;
 // EpdRotation orientation = EPD_ROT_PORTRAIT;
 EpdRotation orientation = EPD_ROT_LANDSCAPE;
 
-const int tzHours = 2; // aikavyöhykkeen tuntieroaika UTC:hen nähden
-const int tzMinutes = 0; // aikavyöhykkeen minuutin eroaika UTC:hen nähden
+const int tzHours = 2;      // aikavyöhykkeen tuntieroaika UTC:hen nähden
+const int tzMinutes = 0;    // aikavyöhykkeen minuutin eroaika UTC:hen nähden
 const int dstOffset = 3600; // kesäajan tunnin siirtymä
-const int stdOffset = 0; // talviajan tunnin siirtymä
+const int stdOffset = 0;    // talviajan tunnin siirtymä
 
 /*End of E-Paper*/
 
-void draw_sensors_top(const char* sensor_text, int cursor_x, int cursor_y) {
+void draw_sensors_top(const char *sensor_text, int cursor_x, int cursor_y)
+{
   EpdFontProperties font_props = epd_font_properties_default();
   font_props.flags = EPD_DRAW_ALIGN_CENTER;
 
   epd_write_string(&OpenSans24B, sensor_text, &cursor_x, &cursor_y, fb, &font_props);
-
 }
 
-void draw_sensors_frame(int cursor_x, int cursor_y, int width, int height) {
+void draw_sensors_frame(int cursor_x, int cursor_y, int width, int height)
+{
   EpdRect r_rect_img_area = {
       .x = cursor_x,
       .y = cursor_y,
@@ -182,7 +194,8 @@ void draw_sensors_frame(int cursor_x, int cursor_y, int width, int height) {
   epd_copy_to_framebuffer(r_rect_img_area, (uint8_t *)r_rect_img_data, fb);
 }
 
-void draw_sensors_label(int img_cursor_x, int img_cursor_y, int img_width, int img_height, const uint8_t* img_data, const char* label_text, int text_cursor_x, int text_cursor_y) {
+void draw_sensors_label(int img_cursor_x, int img_cursor_y, int img_width, int img_height, const uint8_t *img_data, const char *label_text, int text_cursor_x, int text_cursor_y)
+{
   EpdRect img_area = {
       .x = img_cursor_x,
       .y = img_cursor_y,
@@ -199,12 +212,28 @@ void draw_sensors_label(int img_cursor_x, int img_cursor_y, int img_width, int i
   epd_write_string(&OpenSans16B, label_text, &cursor_x, &cursor_y, fb, &font_props);
 }
 
-void draw_sensors_value(const char* sensor_value, int cursor_x, int cursor_y) {
+void draw_sensors_value(const char *sensor_value, int cursor_x, int cursor_y)
+{
   EpdFontProperties font_props = epd_font_properties_default();
   font_props.flags = EPD_DRAW_ALIGN_RIGHT;
 
   epd_write_string(&OpenSans16B, sensor_value, &cursor_x, &cursor_y, fb, &font_props);
+}
 
+void draw_sensors_datetime(const char *sensor_value, int cursor_x, int cursor_y)
+{
+  EpdFontProperties font_props = epd_font_properties_default();
+  font_props.flags = EPD_DRAW_ALIGN_RIGHT;
+
+  epd_write_string(&OpenSans12B, sensor_value, &cursor_x, &cursor_y, fb, &font_props);
+}
+
+void draw_bottom_battery(const char *battery_value, int cursor_x, int cursor_y)
+{
+  EpdFontProperties font_props = epd_font_properties_default();
+  font_props.flags = EPD_DRAW_ALIGN_LEFT;
+
+  epd_write_string(&OpenSans12B, battery_value, &cursor_x, &cursor_y, fb, &font_props);
 }
 
 void setup()
@@ -214,7 +243,7 @@ void setup()
   // Serial.begin(9600);
   Serial.println();
   Serial.println("Starting up...");
-//  
+  //
 
   // First setup epd to use later
   epd_init(EPD_OPTIONS_DEFAULT);
@@ -222,17 +251,27 @@ void setup()
   epd_set_rotation(orientation);
   fb = epd_hl_get_framebuffer(&hl);
   epd_hl_set_all_white(&hl);
+
+  Serial.print("Battery: ");
+  char buff[32];
+  Serial.println(battery.getBatteryChargeLevel());
+  String batt_buff = "Battery: " + String(battery.getBatteryChargeLevel(true)) + "% " + String(battery.getBatteryVolts()) + " V";
+  batt_buff.toCharArray(buff, batt_buff.length() + 1);
+  draw_bottom_battery(buff, 20, 520);
+
   epd_poweroff();
   int x;
-  for (x=10; x <= 650; x = x + 320) {
-    draw_sensors_frame(x , 100, 300, 350);
+  for (x = 10; x <= 650; x = x + 320)
+  {
+    draw_sensors_frame(x, 100, 300, 350);
   }
   x = 0;
-  for (x=20; x <= 660; x = x + 320) {
-    draw_sensors_label(x, 105, 60, 60, temp_img_data, " °C", x+195, 148);
-    draw_sensors_label(x, 175, 60, 60, hum_img_data, " %", x+195, 218);
-    draw_sensors_label(x, 245, 60, 60, pres_img_data, " hpa", x+195, 288);
-    draw_sensors_label(x, 315, 60, 60, batt_img_data, " V", x+195, 358);
+  for (x = 20; x <= 660; x = x + 320)
+  {
+    draw_sensors_label(x, 105, 60, 60, temp_img_data, " °C", x + 195, 148);
+    draw_sensors_label(x, 175, 60, 60, hum_img_data, " %", x + 195, 218);
+    draw_sensors_label(x, 245, 60, 60, pres_img_data, " hpa", x + 195, 288);
+    draw_sensors_label(x, 315, 60, 60, batt_img_data, " V", x + 195, 358);
   }
 
   mqttGroup.addItem(&mqttServerParam);
@@ -266,6 +305,43 @@ void setup()
   mqttClient.onMessageAdvanced(mqttMessageReceived);
 
   Serial.println("Ready.");
+}
+ 
+
+
+/**
+ * Input time in epoch format and return tm time format
+ * by Renzo Mischianti <www.mischianti.org>
+ */
+static tm getDateTimeByParams(long time)
+{
+  struct tm *newtime;
+  const time_t tim = time;
+  newtime = localtime(&tim);
+  return *newtime;
+}
+
+/**
+ * Input tm time format and return String with format pattern
+ * by Renzo Mischianti <www.mischianti.org>
+ */
+static String getDateTimeStringByParams(tm *newtime, char *pattern = (char *)"%d/%m/%Y %H:%M:%S")
+{
+  char buffer[30];
+  strftime(buffer, 30, pattern, newtime);
+  return buffer;
+}
+
+/**
+ * Input time in epoch format format and return String with format pattern
+ * by Renzo Mischianti <www.mischianti.org>
+ */
+static String getEpochStringByParams(long time, char *pattern = (char *)"%d/%m/%Y %H:%M:%S")
+{
+  //    struct tm *newtime;
+  tm newtime;
+  newtime = getDateTimeByParams(time);
+  return getDateTimeStringByParams(&newtime, pattern);
 }
 
 void loop()
@@ -326,30 +402,35 @@ void loop()
     draw_sensors_top(ruuvi_name, cursor_x, 60);
 
     char buff[32];
-    dtostrf(ruuvi_temperature,7,2,buff);
+    dtostrf(ruuvi_temperature, 7, 2, buff);
     draw_sensors_value(buff, cursor_x + 55, 148);
-    dtostrf(ruuvi_humidity,7,2,buff);
+    dtostrf(ruuvi_humidity, 7, 2, buff);
     draw_sensors_value(buff, cursor_x + 55, 218);
     dtostrf(ruuvi_pressure * 0.01, 7, 2, buff);
     draw_sensors_value(buff, cursor_x + 55, 288);
-    dtostrf(ruuvi_batteryVoltage,7,2,buff);
+    dtostrf(ruuvi_batteryVoltage, 7, 2, buff);
     draw_sensors_value(buff, cursor_x + 55, 358);
     // dtostrf(ruuvi_timestamp,7,2,buff);
     setTime(ruuvi_timestamp); // aseta jokin testiaika
-    time_t t = now(); // hae nykyinen aika
+    time_t t = now();         // hae nykyinen aika
+    char timeformat[] = "%d/%m/%y %H:%M:%S";
+    String time_buff = getEpochStringByParams(EE.toLocal(ruuvi_timestamp),timeformat);
+    time_buff.toCharArray(buff,time_buff.length()+ 1);
+    draw_sensors_datetime(buff, cursor_x + 100, 428);
 
+    if (ruuvitagIndex == 0) {
+      
+    }
     // if (isDST(t)) {
     //   adjustTime(dstOffset); // siirrä aikaa kesäajan mukaisesti
     // } else {
     //   adjustTime(stdOffset); // siirrä aikaa talviajan mukaisesti
     // }
-    
 
-    //draw_sensors_value(t, cursor_x + 55, 428);
-    
+    // draw_sensors_value(t, cursor_x + 55, 428);
 
-    //String buff = getEpochStringByParams(EE.toLocal(ruuvi_timestamp),"%d/%m/%y %H:%M:%S");
-    
+    // String buff = getEpochStringByParams(EE.toLocal(ruuvi_timestamp),"%d/%m/%y %H:%M:%S");
+
     // Serial.println(ruuvi_name);
     // Serial.println(str + "temperature " + ruuvi_temperature + " C");
     // Serial.println(str + "humidity " + ruuvi_humidity + " %");
@@ -358,13 +439,15 @@ void loop()
     // Serial.println("-----------------");
 
     doc.clear();
-    
-    if (ruuvitagIndex < 2 ) {
+
+    if (ruuvitagIndex < 2)
+    {
       mqttClient.unsubscribe(ruuvitags[ruuvitagIndex]);
       ++ruuvitagIndex;
       mqttClient.subscribe(ruuvitags[ruuvitagIndex]);
     }
-    else {
+    else
+    {
       enableSleep = true;
     }
   }
@@ -404,7 +487,6 @@ void loop()
     gpio_reset_pin(GPIO_NUM_38);
     gpio_reset_pin(GPIO_NUM_39); */
 
-    epd_poweroff();
     epd_deinit();
     Serial.println("Time to sleep");
     esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);

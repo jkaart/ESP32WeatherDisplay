@@ -410,17 +410,11 @@ void loop()
     draw_sensors_value(buff, cursor_x + 55, 288);
     dtostrf(ruuvi_batteryVoltage, 7, 2, buff);
     draw_sensors_value(buff, cursor_x + 55, 358);
-    // dtostrf(ruuvi_timestamp,7,2,buff);
-    setTime(ruuvi_timestamp); // aseta jokin testiaika
-    time_t t = now();         // hae nykyinen aika
+
     char timeformat[] = "%d/%m/%y %H:%M:%S";
     String time_buff = getEpochStringByParams(EE.toLocal(ruuvi_timestamp),timeformat);
     time_buff.toCharArray(buff,time_buff.length()+ 1);
     draw_sensors_datetime(buff, cursor_x + 100, 428);
-
-    if (ruuvitagIndex == 0) {
-      
-    }
     // if (isDST(t)) {
     //   adjustTime(dstOffset); // siirrä aikaa kesäajan mukaisesti
     // } else {
@@ -467,8 +461,9 @@ void loop()
     Serial.print("Time passed: ");
     Serial.print(millis());
     Serial.println(" ms");
-
-    /* gpio_reset_pin(GPIO_NUM_0);
+    epd_deinit();
+    
+    gpio_reset_pin(GPIO_NUM_0);
     gpio_reset_pin(GPIO_NUM_2);
     gpio_reset_pin(GPIO_NUM_4);
     gpio_reset_pin(GPIO_NUM_12);
@@ -485,9 +480,8 @@ void loop()
     gpio_reset_pin(GPIO_NUM_36);
     gpio_reset_pin(GPIO_NUM_37);
     gpio_reset_pin(GPIO_NUM_38);
-    gpio_reset_pin(GPIO_NUM_39); */
-
-    epd_deinit();
+    gpio_reset_pin(GPIO_NUM_39);
+    
     Serial.println("Time to sleep");
     esp_sleep_enable_timer_wakeup(TIME_TO_SLEEP * uS_TO_S_FACTOR);
     esp_deep_sleep_start();

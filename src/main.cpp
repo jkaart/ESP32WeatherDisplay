@@ -65,7 +65,7 @@
 #include "hum_img.h"
 #include "pres_img.h"
 #include "batt_img.h"
-#include "time_img.h"
+//#include "time_img.h"
 
 #include "r_rect_img.h"
 
@@ -121,6 +121,9 @@ Timezone EE(EEST, EET);
 char mqttServerValue[STRING_LEN];
 char mqttUserNameValue[STRING_LEN];
 char mqttUserPasswordValue[STRING_LEN];
+char ruuvitag1Value[STRING_LEN];
+char ruuvitag2Value[STRING_LEN];
+char ruuvitag3Value[STRING_LEN];
 
 IotWebConf iotWebConf(thingName, &dnsServer, &server, wifiInitialApPassword, CONFIG_VERSION);
 // -- You can also use namespace formats e.g.: iotwebconf::ParameterGroup
@@ -129,13 +132,20 @@ IotWebConfTextParameter mqttServerParam = IotWebConfTextParameter("MQTT server",
 IotWebConfTextParameter mqttUserNameParam = IotWebConfTextParameter("MQTT user", "mqttUser", mqttUserNameValue, STRING_LEN);
 IotWebConfPasswordParameter mqttUserPasswordParam = IotWebConfPasswordParameter("MQTT password", "mqttPass", mqttUserPasswordValue, STRING_LEN);
 
+IotWebConfParameterGroup ruuviGroup = IotWebConfParameterGroup("ruuvi", "Ruuvitag configuration");
+IotWebConfTextParameter ruuvitag1Param = IotWebConfTextParameter("Ruuvitag #1", "ruuvitag1", ruuvitag1Value, STRING_LEN);
+IotWebConfTextParameter ruuvitag2Param = IotWebConfTextParameter("Ruuvitag #2", "ruuvitag2", ruuvitag2Value, STRING_LEN);
+IotWebConfTextParameter ruuvitag3Param = IotWebConfTextParameter("Ruuvitag #3", "ruuvitag3", ruuvitag3Value, STRING_LEN);
+
 bool needMqttConnect = false;
 bool needReset = false;
 int pinState = HIGH;
 unsigned long lastReport = 0;
 unsigned long lastMqttConnectionAttempt = 0;
 
-const char *ruuvitags[] = {"ruuvitag/F9:81:78:B2:70:BE", "ruuvitag/ED:30:75:FE:CD:37", "ruuvitag/CD:8C:07:25:4B:54"};
+//const char *ruuvitags[] = {"ruuvitag/F9:81:78:B2:70:BE", "ruuvitag/ED:30:75:FE:CD:37", "ruuvitag/CD:8C:07:25:4B:54"};
+
+String ruuvitags[3];
 int ruuvitagIndex = 0;
 
 const char *ruuvi_name;
@@ -277,10 +287,14 @@ void setup()
   mqttGroup.addItem(&mqttServerParam);
   mqttGroup.addItem(&mqttUserNameParam);
   mqttGroup.addItem(&mqttUserPasswordParam);
+  ruuviGroup.addItem(&ruuvitag1Param);
+  ruuviGroup.addItem(&ruuvitag2Param);
+  ruuviGroup.addItem(&ruuvitag3Param);
 
   // iotWebConf.setStatusPin(STATUS_PIN);
   iotWebConf.setConfigPin(CONFIG_PIN);
   iotWebConf.addParameterGroup(&mqttGroup);
+  iotWebConf.addParameterGroup(&ruuviGroup);
   iotWebConf.setConfigSavedCallback(&configSaved);
   iotWebConf.setFormValidator(&formValidator);
   iotWebConf.setWifiConnectionCallback(&wifiConnected);
@@ -292,7 +306,14 @@ void setup()
     mqttServerValue[0] = '\0';
     mqttUserNameValue[0] = '\0';
     mqttUserPasswordValue[0] = '\0';
+    ruuvitag1Value[0] = '\0';
+    ruuvitag2Value[0] = '\0';
+    ruuvitag3Value[0] = '\0';
   }
+
+  ruuvitags[0] = ruuvitag1Value;
+  ruuvitags[1] = ruuvitag2Value;
+  ruuvitags[2] = ruuvitag3Value;
 
   // -- Set up required URL handlers on the web server.
   server.on("/", handleRoot);
@@ -301,8 +322,13 @@ void setup()
   server.onNotFound([]()
                     { iotWebConf.handleNotFound(); });
 
+  
+  
+
   mqttClient.begin(mqttServerValue, net);
   mqttClient.onMessageAdvanced(mqttMessageReceived);
+
+  
 
   Serial.println("Ready.");
 }
@@ -569,6 +595,9 @@ bool connectMqtt()
     iotWebConf.delay(500);
   }
   Serial.println("Connected!");
+  Serial.println(ruuvitags[0]);
+  Serial.println(ruuvitags[1]);
+  Serial.println(ruuvitags[2]);
   //   if (ruuvitagIndex < 2) {
   //    mqttClient.subscribe(ruuvitags[ruuvitagIndex]);
   //    Serial.println(ruuvitags[ruuvitagIndex]);

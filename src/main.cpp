@@ -595,9 +595,6 @@ bool connectMqtt()
     iotWebConf.delay(500);
   }
   Serial.println("Connected!");
-  Serial.println(ruuvitags[0]);
-  Serial.println(ruuvitags[1]);
-  Serial.println(ruuvitags[2]);
   //   if (ruuvitagIndex < 2) {
   //    mqttClient.subscribe(ruuvitags[ruuvitagIndex]);
   //    Serial.println(ruuvitags[ruuvitagIndex]);

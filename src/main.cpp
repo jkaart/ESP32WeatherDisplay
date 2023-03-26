@@ -9,32 +9,6 @@
  * of the MIT license.  See the LICENSE file for details.
  */
 
-/**
- * Example: MQTT Demo Application
- * Description:
- *   All IotWebConf specific aspects of this example are described in
- *   previous examples, so please get familiar with IotWebConf before
- *   starting this example. So nothing new will be explained here,
- *   but a complete demo application will be built.
- *   It is also expected from the reader to have a basic knowledge over
- *   MQTT to understand this code.
- *
- *   This example starts an MQTT client with the configured
- *   connection settings.
- *   Will post the status changes of the D2 pin in channel "test/status".
- *   Receives messages appears in channel "test/action", and writes them to serial.
- *   This example also provides the firmware update option.
- *   (See previous examples for more details!)
- *
- * Software setup for this example:
- *   This example utilizes Joel Gaehwiler's MQTT library.
- *   https://github.com/256dpi/arduino-mqtt
- *
- * Hardware setup for this example:
- *   - An LED is attached to LED_BUILTIN pin with setup On=LOW.
- *   - [Optional] A push button is attached to pin D2, the other leg of the
- *     button should be attached to GND.
- */
 #include <Arduino.h>
 #include "pins.h"
 // #include "driver/gpio.h"
@@ -322,18 +296,11 @@ void setup()
   server.onNotFound([]()
                     { iotWebConf.handleNotFound(); });
 
-  
-  
-
   mqttClient.begin(mqttServerValue, net);
   mqttClient.onMessageAdvanced(mqttMessageReceived);
 
-  
-
   Serial.println("Ready.");
 }
- 
-
 
 /**
  * Input time in epoch format and return tm time format
@@ -375,7 +342,6 @@ void loop()
   // -- doLoop should be called as frequently as possible.
   iotWebConf.doLoop();
   mqttClient.loop();
-  // Serial.println(tagNumber);
 
   if (needMqttConnect)
   {
@@ -476,8 +442,19 @@ void loop()
   //   mqttClient.subscribe(ruuvitags[ruuvitagIndex]);
   // }
 
-  if (enableSleep)
+  if (enableSleep || (millis() >  3*60*1000))
   {
+    if (millis() > 3*60*1000) {
+      epd_hl_set_all_white(&hl);
+      EpdFontProperties font_props = epd_font_properties_default();
+      font_props.flags = EPD_DRAW_ALIGN_CENTER;
+      cursor_x = 480;
+      cursor_y = 270;
+      
+      epd_write_string(&OpenSans16B, "Timeout: no ruuvitag data from MQTT!", &cursor_x, &cursor_y, fb, &font_props);
+      Serial.print("Timeout: ");
+      Serial.println(millis());
+    }
     WiFi.disconnect();
     epd_poweron();
     epd_clear();
@@ -563,28 +540,6 @@ bool formValidator(iotwebconf::WebRequestWrapper *webRequestWrapper)
 
   return valid;
 }
-
-// bool connectMqtt() {
-//   unsigned long now = millis();
-//   if (1000 > now - lastMqttConnectionAttempt)
-//   {
-//     // Do not repeat within 1 sec.
-//     return false;
-//   }
-//   Serial.println("Connecting to MQTT server...");
-//   if (!connectMqttOptions()) {
-//     lastMqttConnectionAttempt = now;
-//     return false;
-//   }
-//   Serial.println("Connected!");
-//   //mqttClient.unsubscribe(ruuvitags[ruuvitagIndex]);
-//    if (ruuvitagIndex < 2) {
-//     mqttClient.subscribe(ruuvitags[ruuvitagIndex]);
-//     Serial.println(ruuvitags[ruuvitagIndex]);
-//   }
-
-//   return true;
-// }
 
 // -- This is an alternative MQTT connection method.
 bool connectMqtt()

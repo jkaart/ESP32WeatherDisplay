@@ -157,6 +157,8 @@ const int tzMinutes = 0;    // aikavyöhykkeen minuutin eroaika UTC:hen nähden
 const int dstOffset = 3600; // kesäajan tunnin siirtymä
 const int stdOffset = 0;    // talviajan tunnin siirtymä
 
+float esp_battery_voltage;
+
 /*End of E-Paper*/
 
 void draw_sensors_top(const char *sensor_text, int cursor_x, int cursor_y)
@@ -237,9 +239,10 @@ void setup()
   epd_hl_set_all_white(&hl);
 
   Serial.print("Battery: ");
-  char buff[32];
   Serial.println(battery.getBatteryChargeLevel());
   String batt_buff = "Battery: " + String(battery.getBatteryChargeLevel(true)) + "% " + String(battery.getBatteryVolts()) + " V";
+  esp_battery_voltage = battery.getBatteryVolts();
+  char buff[32];
   batt_buff.toCharArray(buff, batt_buff.length() + 1);
   draw_bottom_battery(buff, 20, 520);
 
@@ -550,13 +553,9 @@ bool connectMqtt()
     iotWebConf.delay(500);
   }
   Serial.println("Connected!");
-  //   if (ruuvitagIndex < 2) {
-  //    mqttClient.subscribe(ruuvitags[ruuvitagIndex]);
-  //    Serial.println(ruuvitags[ruuvitagIndex]);
-  //    Serial.println(millis());
-  //  }
-  // Serial.println(ruuvitags[ruuvitagIndex]);
-  // Serial.println(ruuvitagIndex);
+  if (esp_battery_voltage < 4.25) {
+    mqttClient.publish("stats/ESP32/voltage",String(esp_battery_voltage));
+  }
   mqttClient.subscribe(ruuvitags[ruuvitagIndex]);
   return true;
 }
